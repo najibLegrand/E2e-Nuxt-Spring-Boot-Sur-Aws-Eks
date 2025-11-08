@@ -1,0 +1,51 @@
+stages: [build, test, quality, package, deploy, perf]
+variables:
+  DOCKER_DRIVER: overlay2
+  DOCKER_TLS_CERTDIR: ""
+  REGISTRY: $CI_REGISTRY_IMAGE
+  KUBE_CONTEXT: "${KUBE_CONTEXT_DEV}"
+
+build-back:
+  stage: build
+  image: docker:24
+  services: [docker:24-dind]
+  script:
+    - docker build -t $REGISTRY/catalog-back:$CI_COMMIT_SHORT_SHA backend
+    - docker push $REGISTRY/catalog-back:$CI_COMMIT_SHORT_SHA
+  only: [main]
+
+build-front:
+  stage: build
+  image: docker:24
+  services: [docker:24-dind]
+  script:
+    - docker build -t $REGISTRY/nuxt-front:$CI_COMMIT_SHORT_SHA frontend
+    - docker push $REGISTRY/nuxt-front:$CI_COMMIT_SHORT_SHA
+  only: [main]
+
+test-back:
+  stage: test
+  image: maven:3.9-eclipse-temurin-21
+  script: ["mvn -f backend/pom.xml -B -q test"]
+
+sonar:
+  stage: quality
+  image: maven:3.9-eclipse-temurin-21
+  script:
+    - mvn -f backend/pom.xml -DskipTests verify sonar:sonar -Dsonar.host.url=$SONAR_HOST_URL -Dsonar.login=$SONAR_TOKEN
+  rules: [{ if: "$SONAR_TOKEN" }]
+
+package-chart:
+  stage: package
+  image: alpine/helm:3.14.4
+  script:
+    - helm upgrade --install app infra/helm/app         --namespace app --create-namespace         --set image.backend=$REGISTRY/catalog-back:$CI_COMMIT_SHORT_SHA         --set image.frontend=$REGISTRY/nuxt-front:$CI_COMMIT_SHORT_SHA         --set backend.env.DB_HOST=$RDS_ENDPOINT         --set backend.env.DB_PASSWORD=$DB_PASSWORD         --set ingress.host=$INGRESS_HOST         --set ingress.tlsArn=$ACM_ARN
+  environment: { name: dev, url: https://$INGRESS_HOST }
+  only: [main]
+
+perf-gatling:
+  stage: perf
+  image: eclipse-temurin:21
+  script:
+    - ./gatling/run.sh https://$INGRESS_HOST
+  allow_failure: true
