@@ -1,0 +1,12 @@
+import { defineConfig, presetIcons } from 'unocss'
+import presetWind4 from '@unocss/preset-wind4'
+
+export default defineConfig({
+    presets: [
+        presetWind4(),   // utilitaires "façon Tailwind v4", compacts
+        presetIcons({    // i-<collection>:<name> (ex: i-tabler:ticket)
+            scale: 1,
+            cdn: 'https://esm.sh/'
+        })
+    ]
+})
